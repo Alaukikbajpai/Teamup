@@ -25,9 +25,14 @@ type Match = {
   timeSlot: string
   skillLevel: string
   playersNeeded: number
+  approvedPlayers?: string[]
+  approvedPlayersCount?: number
   spotsLeft: number
   status: "open" | "full"
   description: string
+  citySport?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 type JoinRequest = {
@@ -41,57 +46,6 @@ type JoinRequest = {
   createdAt: string
   updatedAt: string
 }
-
-const sampleMatches: Match[] = [
-  {
-    matchId: "match_1",
-    organizerId: "organizer_1",
-    organizerName: "Rohan",
-    sport: "Badminton",
-    city: "Lucknow",
-    area: "Gomti Nagar",
-    venue: "Smash Arena",
-    matchDateTime: "2026-06-02T18:00:00",
-    timeSlot: "Evening",
-    skillLevel: "Intermediate",
-    playersNeeded: 4,
-    spotsLeft: 2,
-    status: "open",
-    description: "Casual doubles badminton game. Looking for reliable players.",
-  },
-  {
-    matchId: "match_2",
-    organizerId: "organizer_2",
-    organizerName: "Aman",
-    sport: "Football",
-    city: "Delhi",
-    area: "Saket",
-    venue: "Turf 21",
-    matchDateTime: "2026-06-03T20:00:00",
-    timeSlot: "Night",
-    skillLevel: "Beginner",
-    playersNeeded: 10,
-    spotsLeft: 4,
-    status: "open",
-    description: "Friendly 5v5 football match after work.",
-  },
-  {
-    matchId: "match_3",
-    organizerId: "organizer_3",
-    organizerName: "Nisha",
-    sport: "Tennis",
-    city: "Bangalore",
-    area: "Indiranagar",
-    venue: "Club Court",
-    matchDateTime: "2026-06-04T07:00:00",
-    timeSlot: "Morning",
-    skillLevel: "Advanced",
-    playersNeeded: 2,
-    spotsLeft: 1,
-    status: "open",
-    description: "Looking for one advanced tennis partner for practice.",
-  },
-]
 
 function calculateCompatibility(user: UserProfile | null, match: Match) {
   if (!user) return 70
@@ -118,23 +72,35 @@ function formatDateTime(value: string) {
 
 export default function MatchesPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
-  const [matches, setMatches] = useState<Match[]>(sampleMatches)
+  const [matches, setMatches] = useState<Match[]>([])
   const [requests, setRequests] = useState<JoinRequest[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  function loadLocalData() {
+  async function fetchMatches() {
+    try {
+      const response = await fetch("/api/matches", {
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch matches")
+      }
+
+      const data = await response.json()
+      setMatches(data.matches || [])
+    } catch (error) {
+      console.error("Fetch matches error:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  function loadLocalUserAndRequests() {
     const savedProfile = localStorage.getItem("teamup_user_profile")
-    const savedLocalMatches = localStorage.getItem("teamup_local_matches")
     const savedRequests = localStorage.getItem("teamup_join_requests")
 
     if (savedProfile) {
       setUser(JSON.parse(savedProfile))
-    }
-
-    if (savedLocalMatches) {
-      const localMatches = JSON.parse(savedLocalMatches)
-      setMatches([...localMatches, ...sampleMatches])
-    } else {
-      setMatches(sampleMatches)
     }
 
     if (savedRequests) {
@@ -143,12 +109,14 @@ export default function MatchesPage() {
   }
 
   useEffect(() => {
-    loadLocalData()
+    loadLocalUserAndRequests()
+    fetchMatches()
   }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
-      loadLocalData()
+      fetchMatches()
+      loadLocalUserAndRequests()
     }, 5000)
 
     return () => clearInterval(interval)
@@ -218,12 +186,15 @@ export default function MatchesPage() {
       <section className="mx-auto max-w-6xl px-4 py-10">
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            <p className="text-sm font-medium text-slate-500">Step 2 of MVP</p>
+            <p className="text-sm font-medium text-slate-500">
+              Live DynamoDB feed
+            </p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
               Discover open matches
             </h1>
             <p className="mt-3 text-slate-600">
-              Browse local games and see your smart compatibility score.
+              Browse local games and see your smart compatibility score. This
+              page refreshes every 5 seconds.
             </p>
           </div>
 
@@ -241,83 +212,108 @@ export default function MatchesPage() {
           </div>
         )}
 
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {matches.map((match) => {
-            const compatibility = calculateCompatibility(user, match)
-            const requestStatus = getRequestStatus(match.matchId)
+        {isLoading && (
+          <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
+            <p className="text-slate-600">Loading matches from DynamoDB...</p>
+          </div>
+        )}
 
-            return (
-              <article
-                key={match.matchId}
-                className="rounded-2xl border bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500">
-                      {match.city} · {match.area}
-                    </p>
-                    <h2 className="mt-1 text-xl font-bold text-slate-950">
-                      {match.sport}
-                    </h2>
+        {!isLoading && matches.length === 0 && (
+          <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
+            <h2 className="text-xl font-semibold text-slate-950">
+              No matches yet
+            </h2>
+            <p className="mt-2 text-slate-600">
+              Create your first match to see it here.
+            </p>
+            <Link
+              href="/matches/new"
+              className="mt-5 inline-block rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Create Match
+            </Link>
+          </div>
+        )}
+
+        {!isLoading && matches.length > 0 && (
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {matches.map((match) => {
+              const compatibility = calculateCompatibility(user, match)
+              const requestStatus = getRequestStatus(match.matchId)
+
+              return (
+                <article
+                  key={match.matchId}
+                  className="rounded-2xl border bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-500">
+                        {match.city} · {match.area}
+                      </p>
+                      <h2 className="mt-1 text-xl font-bold text-slate-950">
+                        {match.sport}
+                      </h2>
+                    </div>
+
+                    <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
+                      {compatibility}% Match
+                    </span>
                   </div>
 
-                  <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                    {compatibility}% Match
-                  </span>
-                </div>
+                  <div className="mt-4 space-y-2 text-sm text-slate-600">
+                    <p>
+                      <span className="font-medium text-slate-900">Venue:</span>{" "}
+                      {match.venue}
+                    </p>
 
-                <div className="mt-4 space-y-2 text-sm text-slate-600">
-                  <p>
-                    <span className="font-medium text-slate-900">Venue:</span>{" "}
-                    {match.venue}
+                    <p>
+                      <span className="font-medium text-slate-900">Time:</span>{" "}
+                      {formatDateTime(match.matchDateTime)}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-slate-900">Skill:</span>{" "}
+                      {match.skillLevel}
+                    </p>
+
+                    <p>
+                      <span className="font-medium text-slate-900">
+                        Organizer:
+                      </span>{" "}
+                      {match.organizerName}
+                    </p>
+                  </div>
+
+                  <p className="mt-4 text-sm text-slate-600">
+                    {match.description}
                   </p>
 
-                  <p>
-                    <span className="font-medium text-slate-900">Time:</span>{" "}
-                    {formatDateTime(match.matchDateTime)}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-slate-900">Skill:</span>{" "}
-                    {match.skillLevel}
-                  </p>
-
-                  <p>
-                    <span className="font-medium text-slate-900">
-                      Organizer:
-                    </span>{" "}
-                    {match.organizerName}
-                  </p>
-                </div>
-
-                <p className="mt-4 text-sm text-slate-600">
-                  {match.description}
-                </p>
-
-                <div className="mt-5 flex items-center justify-between gap-3">
-                  <span className="rounded-full border px-3 py-1 text-sm font-medium text-slate-700">
-                    {match.spotsLeft} spots left
-                  </span>
-
-                  {requestStatus ? (
-                    <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
-                      {requestStatus}
+                  <div className="mt-5 flex items-center justify-between gap-3">
+                    <span className="rounded-full border px-3 py-1 text-sm font-medium text-slate-700">
+                      {match.spotsLeft} spots left
                     </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                      disabled={match.spotsLeft === 0}
-                      onClick={() => handleRequestToJoin(match)}
-                    >
-                      Request to Join
-                    </button>
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </div>
+
+                    {requestStatus ? (
+                      <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
+                        {requestStatus}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        disabled={match.spotsLeft === 0}
+                        onClick={() => handleRequestToJoin(match)}
+                      >
+                        Request to Join
+                      </button>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
       </section>
     </main>
   )
