@@ -28,24 +28,37 @@ function formatDateTime(value: string) {
 export default function NotificationsPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  function loadNotifications() {
+  async function loadNotifications() {
     const savedProfile = localStorage.getItem("teamup_user_profile")
-    const savedNotifications = localStorage.getItem("teamup_notifications")
 
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile)
-      setUser(profile)
+    if (!savedProfile) {
+      setUser(null)
+      setNotifications([])
+      setIsLoading(false)
+      return
+    }
 
-      const allNotifications: Notification[] = savedNotifications
-        ? JSON.parse(savedNotifications)
-        : []
+    const profile = JSON.parse(savedProfile)
+    setUser(profile)
 
-      const userNotifications = allNotifications.filter(
-        (notification) => notification.userId === profile.userId
-      )
+    try {
+      const response = await fetch(`/api/notifications?userId=${profile.userId}`, {
+        cache: "no-store",
+      })
 
-      setNotifications(userNotifications)
+      if (!response.ok) {
+        throw new Error("Failed to fetch notifications")
+      }
+
+      const data = await response.json()
+      setNotifications(data.notifications || [])
+    } catch (error) {
+      console.error("Fetch notifications error:", error)
+      alert("Could not load notifications.")
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -53,24 +66,13 @@ export default function NotificationsPage() {
     loadNotifications()
   }, [])
 
-  function markAsRead(notificationId: string) {
-    const existingNotifications: Notification[] = JSON.parse(
-      localStorage.getItem("teamup_notifications") || "[]"
-    )
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadNotifications()
+    }, 5000)
 
-    const updatedNotifications = existingNotifications.map((notification) =>
-      notification.notificationId === notificationId
-        ? { ...notification, read: true }
-        : notification
-    )
-
-    localStorage.setItem(
-      "teamup_notifications",
-      JSON.stringify(updatedNotifications)
-    )
-
-    loadNotifications()
-  }
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -78,10 +80,14 @@ export default function NotificationsPage() {
 
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mb-8">
-          <p className="text-sm font-medium text-slate-500">Step 5 of MVP</p>
+          <p className="text-sm font-medium text-slate-500">
+            DynamoDB notifications
+          </p>
+
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
             Notifications
           </h1>
+
           <p className="mt-3 text-slate-600">
             See updates when your join requests are approved or rejected.
           </p>
@@ -93,7 +99,13 @@ export default function NotificationsPage() {
           </div>
         )}
 
-        {user && notifications.length === 0 && (
+        {user && isLoading && (
+          <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
+            <p className="text-slate-600">Loading notifications from DynamoDB...</p>
+          </div>
+        )}
+
+        {user && !isLoading && notifications.length === 0 && (
           <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
             <h2 className="text-xl font-semibold text-slate-950">
               No notifications yet
@@ -104,7 +116,7 @@ export default function NotificationsPage() {
           </div>
         )}
 
-        {notifications.length > 0 && (
+        {user && !isLoading && notifications.length > 0 && (
           <div className="space-y-4">
             {notifications.map((notification) => (
               <article
@@ -133,16 +145,6 @@ export default function NotificationsPage() {
                       {formatDateTime(notification.createdAt)}
                     </p>
                   </div>
-
-                  {!notification.read && (
-                    <button
-                      type="button"
-                      onClick={() => markAsRead(notification.notificationId)}
-                      className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Mark read
-                    </button>
-                  )}
                 </div>
               </article>
             ))}
