@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar"
 
 export default function OnboardingPage() {
   const router = useRouter()
+  const [isSaving, setIsSaving] = useState(false)
 
   const [form, setForm] = useState({
     name: "",
@@ -21,14 +22,16 @@ export default function OnboardingPage() {
     event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) {
     const { name, value } = event.target
+
     setForm((prev) => ({
       ...prev,
       [name]: value,
     }))
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setIsSaving(true)
 
     const userId = `user_${Date.now()}`
 
@@ -46,10 +49,29 @@ export default function OnboardingPage() {
       createdAt: new Date().toISOString(),
     }
 
-    localStorage.setItem("teamup_user_id", userId)
-    localStorage.setItem("teamup_user_profile", JSON.stringify(userProfile))
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(userProfile),
+      })
 
-    router.push("/matches")
+      if (!response.ok) {
+        throw new Error("Failed to save profile")
+      }
+
+      localStorage.setItem("teamup_user_id", userId)
+      localStorage.setItem("teamup_user_profile", JSON.stringify(userProfile))
+
+      router.push("/matches")
+    } catch (error) {
+      console.error("Onboarding save error:", error)
+      alert("Could not save profile. Please check DynamoDB setup and try again.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -81,7 +103,7 @@ export default function OnboardingPage() {
                 value={form.name}
                 onChange={handleChange}
                 required
-                placeholder="Avantika Bajpai"
+                placeholder="Alaukik Bajpai"
                 className="mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
               />
             </div>
@@ -192,9 +214,10 @@ export default function OnboardingPage() {
 
             <button
               type="submit"
-              className="mt-2 rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+              disabled={isSaving}
+              className="mt-2 rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              Save Profile and Browse Matches
+              {isSaving ? "Saving Profile..." : "Save Profile and Browse Matches"}
             </button>
           </div>
         </form>
