@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar"
 
 export default function CreateMatchPage() {
   const router = useRouter()
+  const [isSaving, setIsSaving] = useState(false)
 
   const [form, setForm] = useState({
     sport: "Badminton",
@@ -20,17 +21,21 @@ export default function CreateMatchPage() {
   })
 
   function handleChange(
-    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    event: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) {
     const { name, value } = event.target
+
     setForm((prev) => ({
       ...prev,
       [name]: value,
     }))
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setIsSaving(true)
 
     const savedProfile = localStorage.getItem("teamup_user_profile")
 
@@ -55,26 +60,29 @@ export default function CreateMatchPage() {
       timeSlot: form.timeSlot,
       skillLevel: form.skillLevel,
       playersNeeded,
-      approvedPlayers: [],
-      approvedPlayersCount: 0,
-      spotsLeft: playersNeeded,
-      status: "open",
       description: form.description,
-      citySport: `${form.city}#${form.sport}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     }
 
-    const existingMatches = JSON.parse(
-      localStorage.getItem("teamup_local_matches") || "[]"
-    )
+    try {
+      const response = await fetch("/api/matches", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newMatch),
+      })
 
-    localStorage.setItem(
-      "teamup_local_matches",
-      JSON.stringify([newMatch, ...existingMatches])
-    )
+      if (!response.ok) {
+        throw new Error("Failed to create match")
+      }
 
-    router.push("/matches")
+      router.push("/matches")
+    } catch (error) {
+      console.error("Create match error:", error)
+      alert("Could not create match. Please check DynamoDB setup.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -88,7 +96,8 @@ export default function CreateMatchPage() {
             Create a new match
           </h1>
           <p className="mt-3 text-slate-600">
-            Add a local sports match with simple text fields. No maps needed for MVP.
+            Add a local sports match with simple text fields. No maps needed for
+            MVP.
           </p>
         </div>
 
@@ -251,9 +260,10 @@ export default function CreateMatchPage() {
 
             <button
               type="submit"
-              className="rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+              disabled={isSaving}
+              className="rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              Create Match
+              {isSaving ? "Creating Match..." : "Create Match"}
             </button>
           </div>
         </form>
