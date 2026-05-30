@@ -30,6 +30,18 @@ type Match = {
   description: string
 }
 
+type JoinRequest = {
+  requestId: string
+  matchId: string
+  requesterId: string
+  requesterName: string
+  organizerId: string
+  message: string
+  status: "pending" | "approved" | "rejected"
+  createdAt: string
+  updatedAt: string
+}
+
 const sampleMatches: Match[] = [
   {
     matchId: "match_1",
@@ -96,6 +108,8 @@ function calculateCompatibility(user: UserProfile | null, match: Match) {
 }
 
 function formatDateTime(value: string) {
+  if (!value) return "Date not set"
+
   return new Intl.DateTimeFormat("en-IN", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -105,22 +119,97 @@ function formatDateTime(value: string) {
 export default function MatchesPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [matches, setMatches] = useState<Match[]>(sampleMatches)
+  const [requests, setRequests] = useState<JoinRequest[]>([])
 
-  useEffect(() => {
+  function loadLocalData() {
     const savedProfile = localStorage.getItem("teamup_user_profile")
+    const savedLocalMatches = localStorage.getItem("teamup_local_matches")
+    const savedRequests = localStorage.getItem("teamup_join_requests")
 
     if (savedProfile) {
       setUser(JSON.parse(savedProfile))
     }
+
+    if (savedLocalMatches) {
+      const localMatches = JSON.parse(savedLocalMatches)
+      setMatches([...localMatches, ...sampleMatches])
+    } else {
+      setMatches(sampleMatches)
+    }
+
+    if (savedRequests) {
+      setRequests(JSON.parse(savedRequests))
+    }
+  }
+
+  useEffect(() => {
+    loadLocalData()
   }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setMatches((currentMatches) => [...currentMatches])
+      loadLocalData()
     }, 5000)
 
     return () => clearInterval(interval)
   }, [])
+
+  function handleRequestToJoin(match: Match) {
+    if (!user) {
+      alert("Please create your profile first.")
+      return
+    }
+
+    if (user.userId === match.organizerId) {
+      alert("You cannot request to join your own match.")
+      return
+    }
+
+    const existingRequests: JoinRequest[] = JSON.parse(
+      localStorage.getItem("teamup_join_requests") || "[]"
+    )
+
+    const alreadyRequested = existingRequests.some(
+      (request) =>
+        request.matchId === match.matchId && request.requesterId === user.userId
+    )
+
+    if (alreadyRequested) {
+      alert("You have already requested to join this match.")
+      return
+    }
+
+    const now = new Date().toISOString()
+
+    const newRequest: JoinRequest = {
+      requestId: `request_${Date.now()}`,
+      matchId: match.matchId,
+      requesterId: user.userId,
+      requesterName: user.name,
+      organizerId: match.organizerId,
+      message: `Hi, I would like to join this ${match.sport} match.`,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    const updatedRequests = [newRequest, ...existingRequests]
+
+    localStorage.setItem("teamup_join_requests", JSON.stringify(updatedRequests))
+    setRequests(updatedRequests)
+
+    alert("Request sent to organizer.")
+  }
+
+  function getRequestStatus(matchId: string) {
+    if (!user) return null
+
+    const request = requests.find(
+      (item) => item.matchId === matchId && item.requesterId === user.userId
+    )
+
+    return request?.status || null
+  }
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -155,6 +244,7 @@ export default function MatchesPage() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {matches.map((match) => {
             const compatibility = calculateCompatibility(user, match)
+            const requestStatus = getRequestStatus(match.matchId)
 
             return (
               <article
@@ -181,14 +271,17 @@ export default function MatchesPage() {
                     <span className="font-medium text-slate-900">Venue:</span>{" "}
                     {match.venue}
                   </p>
+
                   <p>
                     <span className="font-medium text-slate-900">Time:</span>{" "}
                     {formatDateTime(match.matchDateTime)}
                   </p>
+
                   <p>
                     <span className="font-medium text-slate-900">Skill:</span>{" "}
                     {match.skillLevel}
                   </p>
+
                   <p>
                     <span className="font-medium text-slate-900">
                       Organizer:
@@ -201,19 +294,25 @@ export default function MatchesPage() {
                   {match.description}
                 </p>
 
-                <div className="mt-5 flex items-center justify-between">
+                <div className="mt-5 flex items-center justify-between gap-3">
                   <span className="rounded-full border px-3 py-1 text-sm font-medium text-slate-700">
                     {match.spotsLeft} spots left
                   </span>
 
-                  <button
-                    type="button"
-                    className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                    disabled={match.spotsLeft === 0}
-                    onClick={() => alert("Request flow will be connected next.")}
-                  >
-                    Request to Join
-                  </button>
+                  {requestStatus ? (
+                    <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
+                      {requestStatus}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={match.spotsLeft === 0}
+                      onClick={() => handleRequestToJoin(match)}
+                    >
+                      Request to Join
+                    </button>
+                  )}
                 </div>
               </article>
             )
