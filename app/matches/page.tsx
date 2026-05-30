@@ -75,6 +75,7 @@ export default function MatchesPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [requests, setRequests] = useState<JoinRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [requestingMatchId, setRequestingMatchId] = useState<string | null>(null)
 
   async function fetchMatches() {
     try {
@@ -95,34 +96,52 @@ export default function MatchesPage() {
     }
   }
 
-  function loadLocalUserAndRequests() {
+  async function loadUserAndRequests() {
     const savedProfile = localStorage.getItem("teamup_user_profile")
-    const savedRequests = localStorage.getItem("teamup_join_requests")
 
-    if (savedProfile) {
-      setUser(JSON.parse(savedProfile))
+    if (!savedProfile) {
+      setUser(null)
+      setRequests([])
+      return
     }
 
-    if (savedRequests) {
-      setRequests(JSON.parse(savedRequests))
+    const profile = JSON.parse(savedProfile)
+    setUser(profile)
+
+    try {
+      const response = await fetch(
+        `/api/join-requests?requesterId=${profile.userId}`,
+        {
+          cache: "no-store",
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch join requests")
+      }
+
+      const data = await response.json()
+      setRequests(data.joinRequests || [])
+    } catch (error) {
+      console.error("Fetch user join requests error:", error)
     }
   }
 
   useEffect(() => {
-    loadLocalUserAndRequests()
+    loadUserAndRequests()
     fetchMatches()
   }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
       fetchMatches()
-      loadLocalUserAndRequests()
+      loadUserAndRequests()
     }, 5000)
 
     return () => clearInterval(interval)
   }, [])
 
-  function handleRequestToJoin(match: Match) {
+  async function handleRequestToJoin(match: Match) {
     if (!user) {
       alert("Please create your profile first.")
       return
@@ -133,11 +152,7 @@ export default function MatchesPage() {
       return
     }
 
-    const existingRequests: JoinRequest[] = JSON.parse(
-      localStorage.getItem("teamup_join_requests") || "[]"
-    )
-
-    const alreadyRequested = existingRequests.some(
+    const alreadyRequested = requests.some(
       (request) =>
         request.matchId === match.matchId && request.requesterId === user.userId
     )
@@ -147,26 +162,43 @@ export default function MatchesPage() {
       return
     }
 
-    const now = new Date().toISOString()
-
-    const newRequest: JoinRequest = {
+    const newRequest = {
       requestId: `request_${Date.now()}`,
       matchId: match.matchId,
       requesterId: user.userId,
       requesterName: user.name,
       organizerId: match.organizerId,
       message: `Hi, I would like to join this ${match.sport} match.`,
-      status: "pending",
-      createdAt: now,
-      updatedAt: now,
     }
 
-    const updatedRequests = [newRequest, ...existingRequests]
+    try {
+      setRequestingMatchId(match.matchId)
 
-    localStorage.setItem("teamup_join_requests", JSON.stringify(updatedRequests))
-    setRequests(updatedRequests)
+      const response = await fetch("/api/join-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newRequest),
+      })
 
-    alert("Request sent to organizer.")
+      if (!response.ok) {
+        throw new Error("Failed to send request")
+      }
+
+      const data = await response.json()
+      setRequests((currentRequests) => [
+        data.joinRequest,
+        ...currentRequests,
+      ])
+
+      alert("Request sent to organizer.")
+    } catch (error) {
+      console.error("Join request error:", error)
+      alert("Could not send join request. Please check DynamoDB setup.")
+    } finally {
+      setRequestingMatchId(null)
+    }
   }
 
   function getRequestStatus(matchId: string) {
@@ -189,9 +221,11 @@ export default function MatchesPage() {
             <p className="text-sm font-medium text-slate-500">
               Live DynamoDB feed
             </p>
+
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
               Discover open matches
             </h1>
+
             <p className="mt-3 text-slate-600">
               Browse local games and see your smart compatibility score. This
               page refreshes every 5 seconds.
@@ -208,7 +242,8 @@ export default function MatchesPage() {
 
         {!user && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Create your profile first to get accurate compatibility scores.
+            Create your profile first to get accurate compatibility scores and
+            request to join matches.
           </div>
         )}
 
@@ -223,9 +258,11 @@ export default function MatchesPage() {
             <h2 className="text-xl font-semibold text-slate-950">
               No matches yet
             </h2>
+
             <p className="mt-2 text-slate-600">
               Create your first match to see it here.
             </p>
+
             <Link
               href="/matches/new"
               className="mt-5 inline-block rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
@@ -240,6 +277,8 @@ export default function MatchesPage() {
             {matches.map((match) => {
               const compatibility = calculateCompatibility(user, match)
               const requestStatus = getRequestStatus(match.matchId)
+              const isOwnMatch = user?.userId === match.organizerId
+              const isRequesting = requestingMatchId === match.matchId
 
               return (
                 <article
@@ -251,6 +290,7 @@ export default function MatchesPage() {
                       <p className="text-sm font-medium text-slate-500">
                         {match.city} · {match.area}
                       </p>
+
                       <h2 className="mt-1 text-xl font-bold text-slate-950">
                         {match.sport}
                       </h2>
@@ -294,7 +334,11 @@ export default function MatchesPage() {
                       {match.spotsLeft} spots left
                     </span>
 
-                    {requestStatus ? (
+                    {isOwnMatch ? (
+                      <span className="rounded-md border px-4 py-2 text-sm font-medium text-slate-700">
+                        Your match
+                      </span>
+                    ) : requestStatus ? (
                       <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
                         {requestStatus}
                       </span>
@@ -302,10 +346,10 @@ export default function MatchesPage() {
                       <button
                         type="button"
                         className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                        disabled={match.spotsLeft === 0}
+                        disabled={match.spotsLeft === 0 || isRequesting}
                         onClick={() => handleRequestToJoin(match)}
                       >
-                        Request to Join
+                        {isRequesting ? "Sending..." : "Request to Join"}
                       </button>
                     )}
                   </div>
