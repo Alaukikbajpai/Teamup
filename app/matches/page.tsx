@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Navbar } from "@/components/navbar"
 
@@ -77,6 +77,10 @@ export default function MatchesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [requestingMatchId, setRequestingMatchId] = useState<string | null>(null)
 
+  const [cityFilter, setCityFilter] = useState("All")
+  const [sportFilter, setSportFilter] = useState("All")
+  const [areaFilter, setAreaFilter] = useState("")
+
   async function fetchMatches() {
     try {
       const response = await fetch("/api/matches", {
@@ -141,6 +145,19 @@ export default function MatchesPage() {
     return () => clearInterval(interval)
   }, [])
 
+  const filteredMatches = useMemo(() => {
+    return matches.filter((match) => {
+      const cityMatches = cityFilter === "All" || match.city === cityFilter
+      const sportMatches = sportFilter === "All" || match.sport === sportFilter
+      const areaMatches =
+        areaFilter.trim() === "" ||
+        match.area.toLowerCase().includes(areaFilter.toLowerCase()) ||
+        match.venue.toLowerCase().includes(areaFilter.toLowerCase())
+
+      return cityMatches && sportMatches && areaMatches
+    })
+  }, [matches, cityFilter, sportFilter, areaFilter])
+
   async function handleRequestToJoin(match: Match) {
     if (!user) {
       alert("Please create your profile first.")
@@ -187,6 +204,7 @@ export default function MatchesPage() {
       }
 
       const data = await response.json()
+
       setRequests((currentRequests) => [
         data.joinRequest,
         ...currentRequests,
@@ -211,6 +229,12 @@ export default function MatchesPage() {
     return request?.status || null
   }
 
+  function clearFilters() {
+    setCityFilter("All")
+    setSportFilter("All")
+    setAreaFilter("")
+  }
+
   return (
     <main className="min-h-screen bg-slate-50">
       <Navbar />
@@ -227,8 +251,8 @@ export default function MatchesPage() {
             </h1>
 
             <p className="mt-3 text-slate-600">
-              Browse local games and see your smart compatibility score. This
-              page refreshes every 5 seconds.
+              Filter by city, area, and sport. This page refreshes every 5
+              seconds.
             </p>
           </div>
 
@@ -238,6 +262,77 @@ export default function MatchesPage() {
           >
             Create Match
           </Link>
+        </div>
+
+        <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">
+                Location filters
+              </h2>
+              <p className="text-sm text-slate-600">
+                Search matches by city, area, venue, or sport.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="rounded-md border bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="text-sm font-medium text-slate-700">City</label>
+              <select
+                value={cityFilter}
+                onChange={(event) => setCityFilter(event.target.value)}
+                className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <option>All</option>
+                <option>Lucknow</option>
+                <option>Delhi</option>
+                <option>Bangalore</option>
+                <option>Gurgaon</option>
+                <option>Noida</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Sport
+              </label>
+              <select
+                value={sportFilter}
+                onChange={(event) => setSportFilter(event.target.value)}
+                className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <option>All</option>
+                <option>Badminton</option>
+                <option>Football</option>
+                <option>Cricket</option>
+                <option>Tennis</option>
+                <option>Basketball</option>
+                <option>Running</option>
+                <option>Pickleball</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Area or venue
+              </label>
+              <input
+                value={areaFilter}
+                onChange={(event) => setAreaFilter(event.target.value)}
+                placeholder="Search Gomti Nagar, Indiranagar..."
+                className="mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+              />
+            </div>
+          </div>
         </div>
 
         {!user && (
@@ -272,91 +367,123 @@ export default function MatchesPage() {
           </div>
         )}
 
-        {!isLoading && matches.length > 0 && (
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {matches.map((match) => {
-              const compatibility = calculateCompatibility(user, match)
-              const requestStatus = getRequestStatus(match.matchId)
-              const isOwnMatch = user?.userId === match.organizerId
-              const isRequesting = requestingMatchId === match.matchId
+        {!isLoading && matches.length > 0 && filteredMatches.length === 0 && (
+          <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
+            <h2 className="text-xl font-semibold text-slate-950">
+              No matches found
+            </h2>
 
-              return (
-                <article
-                  key={match.matchId}
-                  className="rounded-2xl border bg-white p-5 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-500">
-                        {match.city} · {match.area}
-                      </p>
+            <p className="mt-2 text-slate-600">
+              Try changing your city, sport, or area filter.
+            </p>
 
-                      <h2 className="mt-1 text-xl font-bold text-slate-950">
-                        {match.sport}
-                      </h2>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-5 rounded-md bg-slate-950 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Clear Filters
+            </button>
+          </div>
+        )}
+
+        {!isLoading && filteredMatches.length > 0 && (
+          <>
+            <p className="mb-4 text-sm text-slate-500">
+              Showing {filteredMatches.length} of {matches.length} matches
+            </p>
+
+            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {filteredMatches.map((match) => {
+                const compatibility = calculateCompatibility(user, match)
+                const requestStatus = getRequestStatus(match.matchId)
+                const isOwnMatch = user?.userId === match.organizerId
+                const isRequesting = requestingMatchId === match.matchId
+
+                return (
+                  <article
+                    key={match.matchId}
+                    className="rounded-2xl border bg-white p-5 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-500">
+                          {match.city} · {match.area}
+                        </p>
+
+                        <h2 className="mt-1 text-xl font-bold text-slate-950">
+                          {match.sport}
+                        </h2>
+                      </div>
+
+                      <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
+                        {compatibility}% Match
+                      </span>
                     </div>
 
-                    <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                      {compatibility}% Match
-                    </span>
-                  </div>
+                    <div className="mt-4 space-y-2 text-sm text-slate-600">
+                      <p>
+                        <span className="font-medium text-slate-900">
+                          Venue:
+                        </span>{" "}
+                        {match.venue}
+                      </p>
 
-                  <div className="mt-4 space-y-2 text-sm text-slate-600">
-                    <p>
-                      <span className="font-medium text-slate-900">Venue:</span>{" "}
-                      {match.venue}
+                      <p>
+                        <span className="font-medium text-slate-900">
+                          Time:
+                        </span>{" "}
+                        {formatDateTime(match.matchDateTime)}
+                      </p>
+
+                      <p>
+                        <span className="font-medium text-slate-900">
+                          Skill:
+                        </span>{" "}
+                        {match.skillLevel}
+                      </p>
+
+                      <p>
+                        <span className="font-medium text-slate-900">
+                          Organizer:
+                        </span>{" "}
+                        {match.organizerName}
+                      </p>
+                    </div>
+
+                    <p className="mt-4 text-sm text-slate-600">
+                      {match.description}
                     </p>
 
-                    <p>
-                      <span className="font-medium text-slate-900">Time:</span>{" "}
-                      {formatDateTime(match.matchDateTime)}
-                    </p>
-
-                    <p>
-                      <span className="font-medium text-slate-900">Skill:</span>{" "}
-                      {match.skillLevel}
-                    </p>
-
-                    <p>
-                      <span className="font-medium text-slate-900">
-                        Organizer:
-                      </span>{" "}
-                      {match.organizerName}
-                    </p>
-                  </div>
-
-                  <p className="mt-4 text-sm text-slate-600">
-                    {match.description}
-                  </p>
-
-                  <div className="mt-5 flex items-center justify-between gap-3">
-                    <span className="rounded-full border px-3 py-1 text-sm font-medium text-slate-700">
-                      {match.spotsLeft} spots left
-                    </span>
-
-                    {isOwnMatch ? (
-                      <span className="rounded-md border px-4 py-2 text-sm font-medium text-slate-700">
-                        Your match
+                    <div className="mt-5 flex items-center justify-between gap-3">
+                      <span className="rounded-full border px-3 py-1 text-sm font-medium text-slate-700">
+                        {match.spotsLeft} spots left
                       </span>
-                    ) : requestStatus ? (
-                      <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
-                        {requestStatus}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                        disabled={match.spotsLeft === 0 || isRequesting}
-                        onClick={() => handleRequestToJoin(match)}
-                      >
-                        {isRequesting ? "Sending..." : "Request to Join"}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
+
+                      {isOwnMatch ? (
+                        <span className="rounded-md border px-4 py-2 text-sm font-medium text-slate-700">
+                          Your match
+                        </span>
+                      ) : requestStatus ? (
+                        <span className="rounded-md border px-4 py-2 text-sm font-medium capitalize text-slate-700">
+                          {requestStatus}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                          disabled={match.spotsLeft === 0 || isRequesting}
+                          onClick={() => handleRequestToJoin(match)}
+                        >
+                          {isRequesting ? "Sending..." : "Request to Join"}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </>
         )}
       </section>
     </main>
